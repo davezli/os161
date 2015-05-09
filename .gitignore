@@ -1,0 +1,8 @@
+# Ignore config produced files
+kern/compile
+defs.mk
+
+# Ignore compiler produced files
+.depend
+build
+user/testbin/randcall/calls.c
