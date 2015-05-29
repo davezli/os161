@@ -185,21 +185,6 @@ cmd_prog(int nargs, char **args)
  */
 static
 int
-cmd_dth(int nargs, char **args)
-{
-        (void)nargs;
-        (void)args;
-        dbflags = DB_THREADS;
-	kprintf("DB_THREADS Debugging ON \n");
-        return 0;
-}
-
-
-/*
- * Command for starting the system shell.
- */
-static
-int
 cmd_shell(int nargs, char **args)
 {
 	(void)args;
@@ -441,7 +426,6 @@ showmenu(const char *name, const char *x[])
 }
 
 static const char *opsmenu[] = {
-	"[dth]     DB_THREADS Debugging      ",
 	"[s]       Shell                     ",
 	"[p]       Other program             ",
 	"[mount]   Mount a filesystem        ",
@@ -551,7 +535,6 @@ static struct {
 	{ "?t",		cmd_testmenu },
 
 	/* operations */
-	{ "dth",	cmd_dth },
 	{ "s",		cmd_shell },
 	{ "p",		cmd_prog },
 	{ "mount",	cmd_mount },
