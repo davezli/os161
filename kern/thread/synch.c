@@ -171,6 +171,8 @@ lock_create(const char *name)
         }
 
         spinlock_init(&lock->lk_lock);
+
+        // Initialize Values
         lock->lk_value = 1;
         lock->lk_owner = NULL;
 
@@ -237,7 +239,6 @@ lock_do_i_hold(struct lock *lock)
 {
         KASSERT(lock != NULL);
 
-
         spinlock_acquire(&lock->lk_lock);
       
           bool output = (lock->lk_owner == curthread);
@@ -245,7 +246,6 @@ lock_do_i_hold(struct lock *lock)
         spinlock_release(&lock->lk_lock);
         
         return output;
-
 }
 
 ////////////////////////////////////////////////////////////
