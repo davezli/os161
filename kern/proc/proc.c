@@ -50,7 +50,7 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
-
+#include <kern/limits.h>
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
@@ -70,6 +70,56 @@ struct semaphore *no_proc_sem;
 #endif  // UW
 
 
+#ifdef OPT_A2
+int genPID() {
+	int newpid = __PID_MIN;
+	while(newpid <= __PID_MAX) {
+		if(findPID(newpid) == -1)
+			return newpid;
+		else
+			newpid++;
+	}
+	if(newpid + 1 == __PID_MAX) 
+		panic("No more available pids");
+	return -1; // should never get here
+}
+
+int findPID(int pid) {
+	for(int i = 0; i < MAX_PROCS; i++) {
+		if(task_manager[i] != NULL &&
+		   task_manager[i]->pid == pid)
+		   return i;
+	}
+	return -1;
+}
+
+int findPPID(int pid) {
+    for(int i = 0; i < MAX_PROCS; i++) {
+		if(task_manager[i] != NULL &&
+		   task_manager[i]->parent_pid == pid)
+		   return i;
+	}
+	return -1;
+}
+
+int * findChildren(int pid) {
+	static int output[MAX_CHILDREN];
+	for(int j = 0; j < MAX_CHILDREN; j++) {
+		output[j] = -1;
+	}
+	int i = 0;
+	for(int j = 0; j < MAX_PROCS; j++) {
+		if(task_manager[j] != NULL &&
+		   task_manager[j]->parent_pid == pid) {
+		   output[i] = task_manager[j]->pid;
+		   i++;
+		}
+	}
+	return output;
+}
+
+	
+#endif /* OPT_A2 */ 
 
 /*
  * Create a proc structure.
@@ -103,6 +153,13 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+#ifdef OPT_A2
+	proc->parent_pid = 1;
+	proc->pid = 1; // special PID for kern
+	proc->in_use = 1;
+	proc->exitcode = -1;
+	proc->sem = sem_create("kernel sem",0);
+#endif /* OPT_A2 */
 	return proc;
 }
 
@@ -135,7 +192,6 @@ proc_destroy(struct proc *proc)
 		VOP_DECREF(proc->p_cwd);
 		proc->p_cwd = NULL;
 	}
-
 
 #ifndef UW  // in the UW version, space destruction occurs in sys_exit, not here
 	if (proc->p_addrspace) {
@@ -183,8 +239,6 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
-	
-
 }
 
 /*
@@ -193,6 +247,13 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
+#ifdef OPT_A2
+	task_manager = kmalloc(MAX_PROCS * sizeof(struct proc *));
+	for(int i = 0; i < MAX_PROCS; i++) {
+		task_manager[i] = NULL;
+	}
+
+#endif // OPT_A2
   kproc = proc_create("[kernel]");
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
@@ -271,6 +332,20 @@ proc_create_runprogram(const char *name)
 	V(proc_count_mutex);
 #endif // UW
 
+#ifdef OPT_A2
+	proc->pid = genPID();
+	proc->in_use = 1;
+	proc->exitcode = -1;
+	proc->sem = sem_create("wait sem",0);
+	proc->not_ready_to_die = cv_create("not ready to die");
+	proc->proc_lock = lock_create("lock");
+	for(int i = 0; i < MAX_PROCS; i++) {
+		if(task_manager[i] == NULL) {
+			task_manager[i] = proc;
+			break;
+		}
+	}
+#endif /* OPT_A2 */
 	return proc;
 }
 

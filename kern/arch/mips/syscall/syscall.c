@@ -35,7 +35,9 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-
+#include "opt-A2.h"
+#include <addrspace.h>
+#include <proc.h>
 
 /*
  * System call dispatcher.
@@ -132,7 +134,12 @@ syscall(struct trapframe *tf)
 #endif // UW
 
 	    /* Add stuff here */
- 
+#ifdef OPT_A2
+	case SYS_fork:
+	  err = sys_fork(tf,(pid_t *)&retval);
+	  break;
+#endif /* OPT_A2 */
+
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -177,7 +184,24 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(void *tf, unsigned long as_address)
 {
 	(void)tf;
+	(void)as_address;
+#ifdef OPT_A2
+
+	struct trapframe *heap_tf = tf;
+	struct trapframe stack_tf = *heap_tf;
+
+	stack_tf.tf_v0 = 0;
+	stack_tf.tf_a3 = 0;
+	stack_tf.tf_epc += 4;
+
+//	curproc_setas((struct addrspace*) as_address);
+	as_activate();
+
+	kfree(tf);
+	mips_usermode(&stack_tf);
+
+#endif /* OPT_A2 */
 }

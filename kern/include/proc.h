@@ -38,6 +38,7 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include "opt-A2.h"
 
 struct addrspace;
 struct vnode;
@@ -69,6 +70,15 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
+#ifdef OPT_A2
+	pid_t pid;
+	pid_t parent_pid;
+	int in_use;
+	int exitcode;
+	struct semaphore *sem;
+	struct cv *not_ready_to_die;
+    struct lock *proc_lock;
+#endif /* OPT2_A2 */
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -100,5 +110,14 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+#ifdef OPT_A2
+#define MAX_PROCS 512 // 30k is too much...
+#define MAX_CHILDREN 100
+const struct proc **task_manager;
+int genPID(void);
+int findPID(int pid);
+int findPPID(int pid);
+int * findChildren(int pid);
+#endif /* OPT2_A2 */
 
 #endif /* _PROC_H_ */
