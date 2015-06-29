@@ -193,14 +193,16 @@ enter_forked_process(void *tf, unsigned long as_address)
 	struct trapframe *heap_tf = tf;
 	struct trapframe stack_tf = *heap_tf;
 
-	// Moving variables
+	// Set return to 0, a3 to 0 for success, increment pc
 	stack_tf.tf_v0 = 0;
 	stack_tf.tf_a3 = 0;
 	stack_tf.tf_epc += 4;
 
+	// Activating Address Space
 //	curproc_setas((struct addrspace*) as_address);
 	as_activate();
 
+	// Cleaning up & going to usermode
 	kfree(tf);
 	mips_usermode(&stack_tf);
 

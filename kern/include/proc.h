@@ -72,12 +72,7 @@ struct proc {
 	/* add more material here as needed */
 #ifdef OPT_A2
 	pid_t pid;
-	pid_t parent_pid;
-	int in_use;
-	int exitcode;
-	struct semaphore *sem;
-	struct cv *not_ready_to_die;
-    struct lock *proc_lock;
+	int index;
 #endif /* OPT2_A2 */
 };
 
@@ -112,12 +107,28 @@ struct addrspace *curproc_setas(struct addrspace *);
 
 #ifdef OPT_A2
 #define MAX_PROCS 512 // 30k is too much...
-#define MAX_CHILDREN 100
-const struct proc **task_manager;
+struct proc_holder {
+    pid_t pid;
+	pid_t parent_pid;
+	bool in_use;
+	int exitcode;
+	struct semaphore *sem;
+	struct proc *p;
+};
+
+// Helper functions for task_manager
+void print_task_manager(void);
 int genPID(void);
 int findPID(int pid);
-int findPPID(int pid);
-int * findChildren(int pid);
+int make_proc_holder(struct proc *p);
+int get_ph_parent_pid(int index);
+void set_ph_parent_pid(int index, int parent_pid);
+void set_ph_not_in_use(int index);
+int get_ph_exitcode(int index);
+void set_ph_exitcode(int index, int exitcode);
+void p_ph_sem(int index);
+void v_ph_sem(int index);
+
 #endif /* OPT2_A2 */
 
 #endif /* _PROC_H_ */

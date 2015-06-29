@@ -23,25 +23,11 @@ void sys__exit(int exitcode) {
   /* for now, just include this to keep the compiler from complaining about
      an unused variable */
 #ifdef OPT_A2
-	p->exitcode = _MKWAIT_EXIT(exitcode);
-	V(p->sem);
-
-// If children are waiting to die, let them know they can die
-	int *children;
-	children = findChildren(p->pid);
-	for(int i = 0; i < MAX_CHILDREN; i++) {
-		if(children[i] == -1) break;
-		lock_acquire(task_manager[findPID(children[i])]->proc_lock);
-		cv_signal(task_manager[findPID(children[i])]->not_ready_to_die,
-				  task_manager[findPID(children[i])]->proc_lock);
-		lock_release(task_manager[findPID(children[i])]->proc_lock);
-	}
-// if parent is still alive, wait for it to die before dying
-    if(findPID(p->parent_pid) != -1 && p->parent_pid != 1) {
-		lock_acquire(p->proc_lock);
-		cv_wait(p->not_ready_to_die,p->proc_lock);
-		lock_release(p->proc_lock);
-	}
+	if(findPID(p->pid) == -1) 
+		panic("Could not find exiting process in array");
+	set_ph_exitcode(p->index,_MKWAIT_EXIT(exitcode));
+	// for waitpid
+	v_ph_sem(p->index);
 #else
   (void)exitcode;
 #endif /* OPT_A2 */
@@ -114,10 +100,14 @@ sys_waitpid(pid_t pid,
 	if(pid_index == -1)
 		return (ESRCH);
 	//If curproc doesn't own pid
-	if(curproc->pid != task_manager[pid_index]->parent_pid)
+	if(curproc->pid != get_ph_parent_pid(pid_index))
 		return(ECHILD);
-	P(task_manager[pid_index]->sem);
-	exitstatus = task_manager[pid_index]->exitcode;
+	//Wait for child to exit
+	p_ph_sem(pid_index);
+	//Get exitcode
+	exitstatus = get_ph_exitcode(pid_index);
+	//Can now reuse
+	set_ph_not_in_use(pid_index);
 
   result = copyout((void *)&exitstatus,status,sizeof(int));
   *retval = pid;
@@ -144,11 +134,11 @@ int
 sys_fork(struct trapframe *tf, 
 	    pid_t *retval)
 {
-	// create child proc & assign pid
+	// create child proc & set parent pid
 	struct proc *child = proc_create_runprogram("child_proc");
 	if(child == NULL) return ENOMEM;
-	child->parent_pid = curproc->pid;
-			
+	set_ph_parent_pid(child->index,curproc->pid);
+
 	// "copies A's trap frame to the new thread's kernel stack
     struct trapframe *child_tf = kmalloc(sizeof(struct trapframe));
     memcpy(child_tf, tf, sizeof(struct trapframe));
@@ -164,7 +154,7 @@ sys_fork(struct trapframe *tf,
 						(unsigned long)&(child->p_addrspace));
 	if(error != 0) return error;
 
-	// return 0 in child proccess and child pid in parent process
+	// return child pid to parent
 	*retval = child->pid;
 	return 0;
 }

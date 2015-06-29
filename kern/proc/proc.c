@@ -49,7 +49,7 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <synch.h>
-#include <kern/fcntl.h>  
+#include <kern/fcntl.h> 
 #include <kern/limits.h>
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -71,57 +71,91 @@ struct semaphore *no_proc_sem;
 
 
 #ifdef OPT_A2
+
+static struct proc_holder task_manager[MAX_PROCS];
+
 // Finds the next available pid
 int genPID() {
 	int newpid = __PID_MIN;
 	while(newpid <= __PID_MAX) {
-		if(findPID(newpid) == -1)
-			return newpid;
-		else
-			newpid++;
+		for(int i = 0; i < MAX_PROCS; i++) {
+			if(task_manager[i].pid == newpid &&
+			   task_manager[i].in_use)
+				newpid++;
+		}
+		return newpid;
 	}
 	if(newpid + 1 == __PID_MAX) 
 		panic("No more available pids");
 	return -1; // should never get here
 }
 
+// Prints task_manager for debugging purposes:
+void print_task_manager() {
+	for(int i = 0; i < MAX_PROCS; i++) {
+		if(task_manager[i].in_use) {
+			kprintf("index %d, pid %d, parent_pid %d\n",i,task_manager[i].pid,
+			        task_manager[i].parent_pid);
+}}}
+
 // returns index of PID if in task_manager; -1 otherwise
 int findPID(int pid) {
 	for(int i = 0; i < MAX_PROCS; i++) {
-		if(task_manager[i] != NULL &&
-		   task_manager[i]->pid == pid)
+		if(task_manager[i].pid == pid)
 		   return i;
 	}
 	return -1;
 }
 
-// returns index of parent_pid if in task_manger; -1 otherwise
-int findPPID(int pid) {
-    for(int i = 0; i < MAX_PROCS; i++) {
-		if(task_manager[i] != NULL &&
-		   task_manager[i]->parent_pid == pid)
-		   return i;
-	}
-	return -1;
-}
-
-// returns array of all children
-int * findChildren(int pid) {
-	static int output[MAX_CHILDREN];
-	for(int j = 0; j < MAX_CHILDREN; j++) {
-		output[j] = -1;
-	}
-	int i = 0;
-	for(int j = 0; j < MAX_PROCS; j++) {
-		if(task_manager[j] != NULL &&
-		   task_manager[j]->parent_pid == pid) {
-		   output[i] = task_manager[j]->pid;
-		   i++;
+// fills in the empty struct, returns its index in the array
+int make_proc_holder(struct proc *p) {
+	int index;
+	for(index=0; index < MAX_PROCS; index++) {
+		if(!task_manager[index].in_use) {
+			task_manager[index].pid = p->pid;
+			task_manager[index].in_use = true;
+			task_manager[index].exitcode = -1;
+			if(task_manager[index].sem != NULL) {
+			// Cleans up sem if reusing the array spot
+				sem_destroy(task_manager[index].sem);
+				task_manager[index].sem = NULL;
+			}
+			task_manager[index].sem = sem_create("proc sem",0);
+			task_manager[index].p = p;
+			return index; 
 		}
 	}
-	return output;
+	panic("No more available proc spots");
+	return -1; // should never get here
 }
 
+// Helper functions to access or change ph fields
+int get_ph_parent_pid(int index) {
+	return task_manager[index].parent_pid;
+}
+void set_ph_parent_pid(int index, int parent_pid) {
+	task_manager[index].parent_pid = parent_pid;
+	return;
+}
+void set_ph_not_in_use(int index) {
+	task_manager[index].in_use = false;
+	return;
+}
+int get_ph_exitcode(int index) {
+	return task_manager[index].exitcode;
+}
+void set_ph_exitcode(int index, int exitcode) {
+	task_manager[index].exitcode = exitcode;
+	return;
+}
+void p_ph_sem(int index) {
+	P(task_manager[index].sem);
+	return;
+}
+void v_ph_sem(int index) {
+	V(task_manager[index].sem);
+	return;
+}
 	
 #endif /* OPT_A2 */ 
 
@@ -158,10 +192,8 @@ proc_create(const char *name)
 #endif // UW
 
 #ifdef OPT_A2
-	proc->parent_pid = 1;
 	proc->pid = 1; // special PID for kern
-	proc->exitcode = -1;
-	proc->sem = sem_create("kernel sem",0);
+//	proc->index = make_proc_holder(proc);
 #endif /* OPT_A2 */
 	return proc;
 }
@@ -222,13 +254,6 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 
-#ifdef OPT_A2
-	task_manager[findPID(proc->pid)] = NULL;
-	lock_destroy(proc->proc_lock);
-	sem_destroy(proc->sem);
-	cv_destroy(proc->not_ready_to_die);
-#endif // OPT_A2
-
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
@@ -259,12 +284,16 @@ proc_bootstrap(void)
 {
 #ifdef OPT_A2
 	// Initialize task_manager
-	task_manager = kmalloc(MAX_PROCS * sizeof(struct proc *));
 	for(int i = 0; i < MAX_PROCS; i++) {
-		task_manager[i] = NULL;
+		task_manager[i].pid = -1;
+		task_manager[i].parent_pid = -1;
+		task_manager[i].in_use = false;
+		task_manager[i].exitcode = -1;
+		task_manager[i].sem = NULL;
+		task_manager[i].p = NULL;
 	}
-
 #endif // OPT_A2
+
   kproc = proc_create("[kernel]");
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
@@ -344,19 +373,10 @@ proc_create_runprogram(const char *name)
 #endif // UW
 
 #ifdef OPT_A2
-	// Initialize new fields
+	// Take an available PID for proc
 	proc->pid = genPID();
-	proc->in_use = 1;
-	proc->exitcode = -1;
-	proc->sem = sem_create("wait sem",0);
-	proc->not_ready_to_die = cv_create("not ready to die");
-	proc->proc_lock = lock_create("lock");
-	for(int i = 0; i < MAX_PROCS; i++) {
-		if(task_manager[i] == NULL) {
-			task_manager[i] = proc;
-			break;
-		}
-	}
+	// Add to task_manager and set index
+	proc->index = make_proc_holder(proc);
 #endif /* OPT_A2 */
 	return proc;
 }
