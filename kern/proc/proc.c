@@ -71,6 +71,7 @@ struct semaphore *no_proc_sem;
 
 
 #ifdef OPT_A2
+// Finds the next available pid
 int genPID() {
 	int newpid = __PID_MIN;
 	while(newpid <= __PID_MAX) {
@@ -84,6 +85,7 @@ int genPID() {
 	return -1; // should never get here
 }
 
+// returns index of PID if in task_manager; -1 otherwise
 int findPID(int pid) {
 	for(int i = 0; i < MAX_PROCS; i++) {
 		if(task_manager[i] != NULL &&
@@ -93,6 +95,7 @@ int findPID(int pid) {
 	return -1;
 }
 
+// returns index of parent_pid if in task_manger; -1 otherwise
 int findPPID(int pid) {
     for(int i = 0; i < MAX_PROCS; i++) {
 		if(task_manager[i] != NULL &&
@@ -102,6 +105,7 @@ int findPPID(int pid) {
 	return -1;
 }
 
+// returns array of all children
 int * findChildren(int pid) {
 	static int output[MAX_CHILDREN];
 	for(int j = 0; j < MAX_CHILDREN; j++) {
@@ -156,7 +160,6 @@ proc_create(const char *name)
 #ifdef OPT_A2
 	proc->parent_pid = 1;
 	proc->pid = 1; // special PID for kern
-	proc->in_use = 1;
 	proc->exitcode = -1;
 	proc->sem = sem_create("kernel sem",0);
 #endif /* OPT_A2 */
@@ -219,6 +222,13 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 
+#ifdef OPT_A2
+	task_manager[findPID(proc->pid)] = NULL;
+	lock_destroy(proc->proc_lock);
+	sem_destroy(proc->sem);
+	cv_destroy(proc->not_ready_to_die);
+#endif // OPT_A2
+
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
@@ -248,6 +258,7 @@ void
 proc_bootstrap(void)
 {
 #ifdef OPT_A2
+	// Initialize task_manager
 	task_manager = kmalloc(MAX_PROCS * sizeof(struct proc *));
 	for(int i = 0; i < MAX_PROCS; i++) {
 		task_manager[i] = NULL;
@@ -333,6 +344,7 @@ proc_create_runprogram(const char *name)
 #endif // UW
 
 #ifdef OPT_A2
+	// Initialize new fields
 	proc->pid = genPID();
 	proc->in_use = 1;
 	proc->exitcode = -1;

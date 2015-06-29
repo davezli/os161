@@ -24,14 +24,14 @@ void sys__exit(int exitcode) {
      an unused variable */
 #ifdef OPT_A2
 	p->exitcode = _MKWAIT_EXIT(exitcode);
-	V(p->sem);	
+	V(p->sem);
+
 // If children are waiting to die, let them know they can die
 	int *children;
 	children = findChildren(p->pid);
 	for(int i = 0; i < MAX_CHILDREN; i++) {
 		if(children[i] == -1) break;
 		lock_acquire(task_manager[findPID(children[i])]->proc_lock);
-//kprintf("\n%d is letting its child %d know it can die\n",p->pid,task_manager[findPID(children[i])]->pid);
 		cv_signal(task_manager[findPID(children[i])]->not_ready_to_die,
 				  task_manager[findPID(children[i])]->proc_lock);
 		lock_release(task_manager[findPID(children[i])]->proc_lock);
@@ -39,14 +39,9 @@ void sys__exit(int exitcode) {
 // if parent is still alive, wait for it to die before dying
     if(findPID(p->parent_pid) != -1 && p->parent_pid != 1) {
 		lock_acquire(p->proc_lock);
-//kprintf("\n%d is waiting for its parent %d to die\n",p->pid,p->parent_pid);
 		cv_wait(p->not_ready_to_die,p->proc_lock);
-//kprintf("\n%d got the okay from its parent %d to die\n",p->pid,p->parent_pid);
 		lock_release(p->proc_lock);
 	}
-	lock_destroy(p->proc_lock);
-	sem_destroy(p->sem);
-	cv_destroy(p->not_ready_to_die);
 #else
   (void)exitcode;
 #endif /* OPT_A2 */
@@ -79,12 +74,10 @@ void sys__exit(int exitcode) {
   panic("return from thread_exit in sys_exit\n");
 }
 
-
-/* stub handler for getpid() system call                */
 int
 sys_getpid(pid_t *retval)
 {
-#if OPT_A2
+#ifdef OPT_A2
 	*retval = curproc->pid;
 	return(0);
 #else
@@ -94,8 +87,6 @@ sys_getpid(pid_t *retval)
   return(0);
 #endif /* OPT_A2 */  
 }
-
-/* stub handler for waitpid() system call                */
 
 int
 sys_waitpid(pid_t pid,
@@ -115,19 +106,14 @@ sys_waitpid(pid_t pid,
      Fix this!
   */
 
-
-/*
-kprintf("Before waitpid:\n");
-for(int i = 0; i < MAX_PROCS; i++) {
-	if(task_manager[i] != NULL) {
-		kprintf("I: %d, PID: %d, P_PID: %d\n",i,task_manager[i]->pid,task_manager[i]->parent_pid);}}
-*/
 #ifdef OPT_A2
 	if (options != 0) 
     	return(EINVAL);
 	int pid_index = findPID(pid);
+	//If pid is not in task_manager
 	if(pid_index == -1)
 		return (ESRCH);
+	//If curproc doesn't own pid
 	if(curproc->pid != task_manager[pid_index]->parent_pid)
 		return(ECHILD);
 	P(task_manager[pid_index]->sem);
@@ -158,15 +144,10 @@ int
 sys_fork(struct trapframe *tf, 
 	    pid_t *retval)
 {
+	// create child proc & assign pid
 	struct proc *child = proc_create_runprogram("child_proc");
 	if(child == NULL) return ENOMEM;
 	child->parent_pid = curproc->pid;
-/*
-kprintf("After fork:\n");
-for(int i = 0; i < MAX_PROCS; i++) {
-if(task_manager[i] != NULL) {
-kprintf("I: %d, PID: %d, P_PID: %d\n",i,task_manager[i]->pid,task_manager[i]->parent_pid);}}
-*/
 			
 	// "copies A's trap frame to the new thread's kernel stack
     struct trapframe *child_tf = kmalloc(sizeof(struct trapframe));

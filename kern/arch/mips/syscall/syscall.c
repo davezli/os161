@@ -189,10 +189,11 @@ enter_forked_process(void *tf, unsigned long as_address)
 	(void)tf;
 	(void)as_address;
 #ifdef OPT_A2
-
+	// Copying to stack
 	struct trapframe *heap_tf = tf;
 	struct trapframe stack_tf = *heap_tf;
 
+	// Moving variables
 	stack_tf.tf_v0 = 0;
 	stack_tf.tf_a3 = 0;
 	stack_tf.tf_epc += 4;
