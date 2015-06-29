@@ -190,8 +190,7 @@ enter_forked_process(void *tf, unsigned long as_address)
 	(void)as_address;
 #ifdef OPT_A2
 	// Copying to stack
-	struct trapframe *heap_tf = tf;
-	struct trapframe stack_tf = *heap_tf;
+	struct trapframe stack_tf = *(struct trapframe *)tf;
 
 	// Set return to 0, a3 to 0 for success, increment pc
 	stack_tf.tf_v0 = 0;
@@ -202,8 +201,7 @@ enter_forked_process(void *tf, unsigned long as_address)
 //	curproc_setas((struct addrspace*) as_address);
 	as_activate();
 
-	// Cleaning up & going to usermode
-	kfree(tf);
+	// Go to usermode
 	mips_usermode(&stack_tf);
 
 #endif /* OPT_A2 */

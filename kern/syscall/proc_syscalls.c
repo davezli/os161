@@ -20,8 +20,6 @@ void sys__exit(int exitcode) {
 
   struct addrspace *as;
   struct proc *p = curproc;
-  /* for now, just include this to keep the compiler from complaining about
-     an unused variable */
 #ifdef OPT_A2
 	if(findPID(p->pid) == -1) 
 		panic("Could not find exiting process in array");
@@ -29,6 +27,8 @@ void sys__exit(int exitcode) {
 	// for waitpid
 	v_ph_sem(p->index);
 #else
+  /* for now, just include this to keep the compiler from complaining about
+     an unused variable */
   (void)exitcode;
 #endif /* OPT_A2 */
 
@@ -82,54 +82,46 @@ sys_waitpid(pid_t pid,
 {
   int exitstatus;
   int result;
-
-  /* this is just a stub implementation that always reports an
-     exit status of 0, regardless of the actual exit status of
-     the specified process.   
-     In fact, this will return 0 even if the specified process
-     is still running, and even if it never existed in the first place.
-
-     Fix this!
-  */
-
+  if (options != 0) {
+    return(EINVAL);
+  }
 #ifdef OPT_A2
-	if (options != 0) 
-    	return(EINVAL);
 	int pid_index = findPID(pid);
 	//If pid is not in task_manager
-	if(pid_index == -1)
+	if(pid_index == -1) {
 		return (ESRCH);
+	}
 	//If curproc doesn't own pid
-	if(curproc->pid != get_ph_parent_pid(pid_index))
+	if(curproc->pid != get_ph_parent_pid(pid_index)) {
 		return(ECHILD);
+	}
 	//Wait for child to exit
 	p_ph_sem(pid_index);
 	//Get exitcode
 	exitstatus = get_ph_exitcode(pid_index);
 	//Can now reuse
 	set_ph_not_in_use(pid_index);
-
-  result = copyout((void *)&exitstatus,status,sizeof(int));
-  *retval = pid;
-  if (result) {
-    return(result);
-  }
-  return(0);
 #else
-  if (options != 0) {
-    return(EINVAL);
-  }
+  /* this is just a stub implementation that always reports an
+     exit status of 0, regardless of the actual exit status of
+     the specified process.   
+     In fact, this will return 0 even if the specified process
+     is still running, and even if it never existed in the first place.
+
+	Fix this!
+  */
   /* for now, just pretend the exitstatus is 0 */
   exitstatus = 0;
+#endif /* OPT_A2 */
   result = copyout((void *)&exitstatus,status,sizeof(int));
   if (result) {
     return(result);
   }
   *retval = pid;
   return(0);
-  #endif /* OPT_A2 */
 }
 
+#ifdef OPT_A2
 int
 sys_fork(struct trapframe *tf, 
 	    pid_t *retval)
@@ -158,3 +150,4 @@ sys_fork(struct trapframe *tf,
 	*retval = child->pid;
 	return 0;
 }
+#endif //OPT_A2
