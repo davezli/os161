@@ -163,7 +163,7 @@ int sys_execv( char *program, char **args, pid_t *retval) {
     int result;
 
 // Step 1: Copy arguments from user space into kernel buffer
-	//Copy name
+	// Copy name
 	int name_length = 0;
 	while(program[name_length] != '\0')
 		name_length++;
@@ -177,21 +177,27 @@ int sys_execv( char *program, char **args, pid_t *retval) {
 		return result;
 	}
 
+	// Count Arguments
 	int argc = 0;
 	while(args[argc] != NULL) {
 		argc++;
 	}
+	
+	// Copy Args
 	int total_length = 0; // for error checking purposes
 	char *buffer[argc+1];
 	for(int i=0; i < argc; i++) {
+		// Find length of arg[i]
 		int length = 0;
 		while(args[i][length] != '\0')
 			length++;
 		length++; // for '\0'
+		// Find offset if needed 
 		int offset = 0;
 		while((length+offset)%4 != 0)
 			offset++;
 		total_length += length;
+		// Copy arg
 		buffer[i] = kmalloc((length+offset)*sizeof(char));
 		if(buffer[i] == NULL) {
 			return ENOMEM;
@@ -254,23 +260,29 @@ int sys_execv( char *program, char **args, pid_t *retval) {
 
     // Copyouts each arg & stores address
     for(int i = 0; i < argc; i++) {
+		// Find length of arg from end to front of array
         int length = 0;
         while(buffer[argc-i-1][length] != '\0')
             length++;
         length++; // for '\0'
+		// Allocate room for arg
         stackptr -= length;
+		// Add offset if needed
         while(stackptr % 4 != 0) {
             stackptr--;
         }
         copyoutstr(buffer[argc-i-1],(userptr_t)stackptr,length,NULL);
+		// Store address of arg
         kargv[argc-i-1] = stackptr;
     }
     kargv[argc] = 0; // For NULL
     // Copyouts kargv[]
     for(int i = 0; i < argc+1; i++) {
+		// sizeof(char *) is 4 so can hardcode in
         stackptr -= 4;
         copyout((char*)&kargv[argc-i],(userptr_t)stackptr,4);
     }
+	// Kargvptr = where kargv starts
     size_t kargvptr = stackptr;
     // Ensure stackptr is multiple of 8
     while(stackptr % 8 != 0) {
@@ -282,6 +294,7 @@ int sys_execv( char *program, char **args, pid_t *retval) {
 	for(int i = 0; i < argc; i++) {	
 		kfree(buffer[i]);
 	}
+
 // Step 4: Return to user mode using enter_new_process
     /* Warp to user mode. */
     enter_new_process(argc, (userptr_t) kargvptr,

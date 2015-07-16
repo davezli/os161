@@ -63,7 +63,7 @@ int runprogram(char *program, char **args, int argc) {
     vaddr_t entrypoint, stackptr;
     int result;
 
-// Step 1: Not needed in runprogram
+// Step 1: Not needed in runprogram: this is kern->userspace
 
 // Step 2: Open executable, create new as, load elf
     /* Open the file. */
@@ -108,23 +108,29 @@ int runprogram(char *program, char **args, int argc) {
 	size_t kargv[argc+1];
 	// Copyouts each arg & stores address
 	for(int i = 0; i < argc; i++) {
+		// Find length of arg from back to front
 		int length = 0;
 		while(args[argc-i-1][length] != '\0')
 			length++;
 		length++; // for '\0'
+		// Make room for arg
 		stackptr -= length;
+		// Make room for offset
 		while(stackptr % 4 != 0) {
 			stackptr--;
 		}
 		copyoutstr(args[argc-i-1],(userptr_t)stackptr,length,NULL);
+		// Store address of arg
 		kargv[argc-i-1] = stackptr; 
 	}
 	kargv[argc] = 0; // For NULL
 	// Copyouts kargv[]
 	for(int i = 0; i < argc+1; i++) {
+		// sizeof(*char) = 4, can hard code
 		stackptr -= 4;
 		copyout((char*)&kargv[argc-i],(userptr_t)stackptr,4);
 	}
+	// kargvptr is &kargv
 	size_t kargvptr = stackptr;
 	// Ensure stackptr is multiple of 8
 	while(stackptr % 8 != 0) {
