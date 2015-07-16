@@ -44,6 +44,8 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
+#include "opt-A2.h"
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -51,6 +53,94 @@
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+
+#ifdef OPT_A2
+int runprogram(char *program, char **args, int argc) {
+
+    // Most of this code is copied from runprogram:
+    struct addrspace *as;
+    struct vnode *v;
+    vaddr_t entrypoint, stackptr;
+    int result;
+
+// Step 1: Not needed in runprogram
+
+// Step 2: Open executable, create new as, load elf
+    /* Open the file. */
+    result = vfs_open(program, O_RDONLY, 0, &v);
+    if (result) {
+        return result;
+    }
+
+    /* We should be a new process. */
+    KASSERT(curproc_getas() == NULL);
+
+    /* Create a new address space. */
+    as = as_create();
+    if (as ==NULL) {
+        vfs_close(v);
+        return ENOMEM;
+    }
+
+    /* Switch to it and activate it. */
+    curproc_setas(as);
+    as_activate();
+
+    /* Load the executable. */
+    result = load_elf(v, &entrypoint);
+    if (result) {
+        /* p_addrspace will go away when curproc is destroyed */
+        vfs_close(v);
+        return result;
+    }
+
+    /* Done with the file now. */
+    vfs_close(v);
+
+    /* Define the user stack in the address space */
+    result = as_define_stack(as, &stackptr);
+    if (result) {
+        /* p_addrspace will go away when curproc is destroyed */
+        return result;
+    }
+
+// Step 3: Copy the arguments from kernel buffer into user stack
+	size_t kargv[argc+1];
+	// Copyouts each arg & stores address
+	for(int i = 0; i < argc; i++) {
+		int length = 0;
+		while(args[argc-i-1][length] != '\0')
+			length++;
+		length++; // for '\0'
+		stackptr -= length;
+		while(stackptr % 4 != 0) {
+			stackptr--;
+		}
+		copyoutstr(args[argc-i-1],(userptr_t)stackptr,length,NULL);
+		kargv[argc-i-1] = stackptr; 
+	}
+	kargv[argc] = 0; // For NULL
+	// Copyouts kargv[]
+	for(int i = 0; i < argc+1; i++) {
+		stackptr -= 4;
+		copyout((char*)&kargv[argc-i],(userptr_t)stackptr,4);
+	}
+	size_t kargvptr = stackptr;
+	// Ensure stackptr is multiple of 8
+	while(stackptr % 8 != 0) {
+		stackptr--;
+	}
+
+    /* Warp to user mode. */
+    enter_new_process(argc,(userptr_t) kargvptr,
+              stackptr, entrypoint);
+    
+    /* enter_new_process does not return. */
+    panic("enter_new_process returned\n");
+    return EINVAL;
+	
+}
+#else
 int
 runprogram(char *progname)
 {
@@ -105,4 +195,4 @@ runprogram(char *progname)
 	panic("enter_new_process returned\n");
 	return EINVAL;
 }
-
+#endif //OPT_A2
