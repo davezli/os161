@@ -30,6 +30,7 @@
 #ifndef _MIPS_VM_H_
 #define _MIPS_VM_H_
 
+#include "opt-A3.h"
 
 /*
  * Machine-dependent VM system definitions.
@@ -117,6 +118,13 @@ struct tlbshootdown {
 };
 
 #define TLBSHOOTDOWN_MAX 16
+
+#if OPT_A3
+struct coremap_entry {
+    paddr_t pa;
+	int state; // 0 = free, 1 = fixed, 2 = clean, 3 = dirty
+};
+#endif //OPT_a3
 
 
 #endif /* _MIPS_VM_H_ */

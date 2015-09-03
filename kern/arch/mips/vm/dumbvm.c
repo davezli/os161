@@ -37,6 +37,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include "opt-A3.h"
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -48,6 +49,12 @@
 /* under dumbvm, always have 48k of user stack */
 #define DUMBVM_STACKPAGES    12
 
+#if OPT_A3
+struct coremap_entry *coremap;
+static int total_page_num = 0;
+static int done_bootstrap = 0;
+#endif //OPT_A3
+
 /*
  * Wrap rma_stealmem in a spinlock.
  */
@@ -56,7 +63,25 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+#if (OPT_A3 == 0)
+	paddr_t firstaddr, lastaddr, freeaddr;
+	ram_getsize(&firstaddr, &lastaddr);
+	total_page_num = (lastaddr-firstaddr) / PAGE_SIZE;
+	coremap = (struct coremap_entry*) PADDR_TO_KVADDR(firstaddr);
+	freeaddr = firstaddr + total_page_num * sizeof(struct coremap_entry);
+
+	for(int i = 0; i < total_page_num; i++) {
+			coremap[i].pa = firstaddr + i * PAGE_SIZE;			
+			if(coremap[i].pa < freeaddr)
+				coremap[i].state = 1;
+			else
+				coremap[i].state = 0;
+	}	
+	done_bootstrap = 1;
+#else
+	(void) total_page_num;
+	(void) done_bootstrap;
+#endif // OPT_A3
 }
 
 static
@@ -122,8 +147,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
+#if OPT_A3
+			return EFAULT; // prevents kern from crashing
+#else
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+			panic("dumbvm: got VM_FAULT_READONLY\n");
+#endif // OPT_A3
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -188,8 +217,35 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
+#if OPT_A3
+	for(i=0; i<=NUM_TLB; i++) {
+		if(i!=NUM_TLB) {
+	        tlb_read(&ehi, &elo, i);
+	        if (elo & TLBLO_VALID) {
+    	        continue;
+      		}
+		}
+        ehi = faultaddress;
+        elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+        DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 
-	for (i=0; i<NUM_TLB; i++) {
+		// "make sure the text segment is writeable until the kernel 
+		//	has finished loading it, and then make it read-only"
+		if(as->elf_loaded && 
+		   faultaddress >= vbase1 && faultaddress < vtop1) {
+				elo = elo &  ~TLBLO_DIRTY;
+		}
+		if(i!=NUM_TLB) {
+	        tlb_write(ehi, elo, i);
+		}
+		else { // i == NUM_TLB
+			tlb_random(ehi, elo);
+		}
+        splx(spl);
+        return 0;
+    }
+#else
+	for(i=0; i<NUM_TLB; i++) {
 		tlb_read(&ehi, &elo, i);
 		if (elo & TLBLO_VALID) {
 			continue;
@@ -201,7 +257,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		splx(spl);
 		return 0;
 	}
-
+#endif //OPT_A3
+	// Should never get here after OPT_A3
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
 	return EFAULT;
@@ -222,7 +279,9 @@ as_create(void)
 	as->as_pbase2 = 0;
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
-
+#if OPT_A3
+	as->elf_loaded = 0;
+#endif //OPT_A3
 	return as;
 }
 
@@ -393,3 +452,4 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	*ret = new;
 	return 0;
 }
+
